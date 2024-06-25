@@ -74,6 +74,27 @@ typedef struct {
 	SM9_Z256_POINT ds;
 } SM9_SIGN_KEY;
 
+typedef struct {
+	SM9_Z256_TWIST_POINT Ppubs;
+	SM9_Z256_POINT DIDA;
+} SM9_COSIGN_KEYA;
+
+typedef struct {
+	sm9_z256_t dIDB;
+	sm9_z256_t dIDB_inv;
+} SM9_COSIGN_KEYB;
+
+typedef struct {
+	SM9_Z256_TWIST_POINT DIDA;
+	SM9_Z256_POINT Ppube;
+} SM9_CODEC_KEYA;
+
+typedef struct {
+	SM9_Z256_POINT Ppube;
+	sm9_z256_t DIDB;
+} SM9_CODEC_KEYB;
+
+
 int sm9_sign_master_key_generate(SM9_SIGN_MASTER_KEY *master);
 int sm9_sign_master_key_extract_key(SM9_SIGN_MASTER_KEY *master, const char *id, size_t idlen, SM9_SIGN_KEY *key);
 
@@ -159,6 +180,19 @@ typedef struct {
 	SM9_Z256_POINT Ppube;
 	SM9_Z256_TWIST_POINT de;
 } SM9_ENC_KEY;
+
+// cosm9 - sign
+int sm9_cosign_master_key_extract_key(SM9_SIGN_MASTER_KEY *msk, const char *id, size_t idlen, SM9_COSIGN_KEYA *keyA, SM9_COSIGN_KEYB *keyB);
+int sm9_cosign_A1(const SM9_COSIGN_KEYA *keya, const sm9_z256_fp12_t g, sm9_z256_t r1, sm9_z256_fp12_t w1);
+int sm9_cosign_B1(const SM9_COSIGN_KEYB *keyb, const sm9_z256_fp12_t g, const uint8_t *data, size_t datalen,
+				  const sm9_z256_fp12_t w1, sm9_z256_t s_t, sm9_z256_t h);
+int sm9_cosign_A2(const SM9_COSIGN_KEYA *keya, const sm9_z256_t r1, const sm9_z256_t s_t, const sm9_z256_t h, SM9_Z256_POINT *S);
+// cosm9 - dec
+int sm9_codec_master_key_extract_key(SM9_ENC_MASTER_KEY *msk, const char *id, size_t idlen, SM9_CODEC_KEYA *keyA, SM9_CODEC_KEYB *keyB);
+int sm9_do_codec_A1(const SM9_CODEC_KEYA *key, const SM9_Z256_POINT *C1, sm9_z256_fp12_t w1);
+int sm9_do_codec_B1(const SM9_CODEC_KEYB *key, const char *id, size_t idlen,
+	const SM9_Z256_POINT *C1, const uint8_t *c2, size_t c2len, const uint8_t c3[SM3_HMAC_SIZE],
+	const sm9_z256_fp12_t w1, uint8_t *out);
 
 int sm9_enc_master_key_generate(SM9_ENC_MASTER_KEY *master);
 int sm9_enc_master_key_extract_key(SM9_ENC_MASTER_KEY *master, const char *id, size_t idlen, SM9_ENC_KEY *key);

@@ -77,6 +77,7 @@ int sm9_signature_from_der(SM9_SIGNATURE *sig, const uint8_t **in, size_t *inlen
 
 int sm9_sign_init(SM9_SIGN_CTX *ctx)
 {
+	printf("%s: lib\n", __func__);
 	const uint8_t prefix[1] = { SM9_HASH2_PREFIX };
 	sm3_init(&ctx->sm3_ctx);
 	sm3_update(&ctx->sm3_ctx, prefix, sizeof(prefix));

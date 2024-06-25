@@ -27,6 +27,8 @@ int sm9_signature_to_der(const SM9_SIGNATURE *sig, uint8_t **out, size_t *outlen
 
 	sm9_z256_to_bytes(sig->h, hbuf);
 	sm9_z256_point_to_uncompressed_octets(&sig->S, Sbuf);
+    format_bytes(stdout, 0, 0, "hbuf", hbuf, 32);
+    format_bytes(stdout, 0, 0, "Sbuf", Sbuf, 65);
 
 	if (asn1_octet_string_to_der(hbuf, sizeof(hbuf), NULL, &len) != 1
 		|| asn1_bit_octets_to_der(Sbuf, sizeof(Sbuf), NULL, &len) != 1
@@ -127,7 +129,7 @@ int sm9_do_sign(const SM9_SIGN_KEY *key, const SM3_CTX *sm3_ctx, SM9_SIGNATURE *
 		}
 		
 		// Only for testing
-		//sm9_z256_from_hex(r, "00033C8616B06704813203DFD00965022ED15975C662337AED648835DC4B1CBE");
+		// sm9_z256_from_hex(r, "00033C8616B06704813203DFD00965022ED15975C662337AED648835DC4B1CBE");
 
 		// A3: w = g^r
 		sm9_z256_fp12_pow(g, g, r);
@@ -155,6 +157,95 @@ int sm9_do_sign(const SM9_SIGN_KEY *key, const SM3_CTX *sm3_ctx, SM9_SIGNATURE *
 	gmssl_secure_clear(wbuf, sizeof(wbuf));
 	gmssl_secure_clear(&tmp_ctx, sizeof(tmp_ctx));
 	gmssl_secure_clear(Ha, sizeof(Ha));
+
+	return 1;
+}
+
+int sm9_cosign_A1(const SM9_COSIGN_KEYA *keya, const sm9_z256_fp12_t g, sm9_z256_t r1, sm9_z256_fp12_t w1){
+	sm9_z256_rand_range(r1, sm9_z256_order());
+	// sm9_z256_from_hex(r1, "00033C8616B06704813203DFD00965022ED15975C662337AED648835DC4B1CBE");
+	sm9_z256_fp12_pow(w1, g, r1);
+}
+
+int sm9_cosign_B1(const SM9_COSIGN_KEYB *keyb, const sm9_z256_fp12_t g, const uint8_t *data, size_t datalen,
+				  const sm9_z256_fp12_t w1, sm9_z256_t s_t, sm9_z256_t h)
+{
+	sm9_z256_t r2;
+	sm9_z256_fp12_t w2;
+	uint8_t wbuf[32 * 12];
+	const uint8_t prefix[1] = {SM9_HASH2_PREFIX};
+	SM3_CTX ctx;
+	SM3_CTX tmp_ctx;
+	uint8_t ct1[4] = {0,0,0,1};
+	uint8_t ct2[4] = {0,0,0,2};
+	uint8_t Ha[64];
+
+	// A1: g = e(P1, Ppubs)
+	// sm9_z256_pairing(g, &key->Ppubs, sm9_z256_generator());
+
+	// do {
+		// A2: rand r in [1, N-1]
+		// if (sm9_z256_rand_range(r, sm9_z256_order()) != 1) {
+		// 	error_print();
+		// 	return -1;
+		// }
+
+		// 1. rand r2
+		sm9_z256_rand_range(r2, sm9_z256_order());
+		// sm9_z256_from_hex(r2, "00033C8616B06704813203DFD00965022ED15975C662337AED648835DC4B1CBE");
+
+		// 2. w2 = (g^r2 * w1)^(dIDB^-1)
+		sm9_z256_fp12_pow(w2, g, r2);
+		sm9_z256_fp12_mul(w2, w2, w1);
+		sm9_z256_fp12_pow(w2, w2, keyb->dIDB_inv);
+
+		// Only for testing
+		//sm9_z256_from_hex(r, "00033C8616B06704813203DFD00965022ED15975C662337AED648835DC4B1CBE");
+
+		// A3: w = g^r
+		// sm9_z256_fp12_pow(g, g, r);
+		
+		// A4: h = H2(M || w, N)
+
+		// 3. h = H2(M || w2, N)
+		sm9_z256_fp12_to_bytes(w2, wbuf);
+		sm3_init(&ctx);
+		sm3_update(&ctx, prefix, sizeof(prefix));
+		sm3_update(&ctx, data, datalen);
+		sm3_update(&ctx, wbuf, sizeof(wbuf));
+		tmp_ctx = ctx;
+		sm3_update(&ctx, ct1, sizeof(ct1));
+		sm3_finish(&ctx, Ha);
+		sm3_update(&tmp_ctx, ct2, sizeof(ct2));
+		sm3_finish(&tmp_ctx, Ha + 32);
+		sm9_z256_modn_from_hash(h, Ha);
+
+		// 4. s_t = r2-dIDB*h
+		sm9_z256_modn_mul(s_t, keyb->dIDB, h);
+		sm9_z256_modn_sub(s_t, r2, s_t);
+		// A5: l = (r - h) mod N, if l = 0, goto A2
+		// sm9_z256_modn_sub(r, r, sig->h);
+
+	// } while (sm9_z256_is_zero(r));
+
+	// A6: S = l * dsA
+	// sm9_z256_point_mul(&sig->S, r, &key->ds);
+
+	gmssl_secure_clear(&r2, sizeof(r2));
+	gmssl_secure_clear(&w2, sizeof(w2));
+	gmssl_secure_clear(wbuf, sizeof(wbuf));
+	gmssl_secure_clear(&tmp_ctx, sizeof(tmp_ctx));
+	gmssl_secure_clear(Ha, sizeof(Ha));
+
+	return 1;
+}
+
+int sm9_cosign_A2(const SM9_COSIGN_KEYA *keya, const sm9_z256_t r1, const sm9_z256_t s_t, const sm9_z256_t h, SM9_Z256_POINT *S){
+	sm9_z256_t tmp;
+
+	// 1. S = [r1+s']DIDA
+	sm9_z256_modn_add(tmp, r1, s_t);
+	sm9_z256_point_mul(S, tmp, &(keya->DIDA));
 
 	return 1;
 }

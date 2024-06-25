@@ -686,10 +686,70 @@ int test_sm9_z256_sign()
 	sm9_z256_from_hex(mpk.ks, hex_ks); sm9_z256_twist_point_mul_generator(&(mpk.Ppubs), mpk.ks);
 	if (sm9_sign_master_key_extract_key(&mpk, (char *)IDA, sizeof(IDA), &key) < 0) goto err; ++j;
 	sm9_z256_point_from_hex(&ds, hex_ds); if (!sm9_z256_point_equ(&(key.ds), &ds)) goto err; ++j;
-
+	
 	sm9_sign_init(&ctx);
 	sm9_sign_update(&ctx, data, sizeof(data));
 	if (sm9_sign_finish(&ctx, &key, sig, &siglen) < 0) goto err; ++j;
+
+	sm9_verify_init(&ctx);
+	sm9_verify_update(&ctx, data, sizeof(data));
+	if (sm9_verify_finish(&ctx, sig, siglen, &mpk, (char *)IDA, sizeof(IDA)) != 1) goto err; ++j;
+
+	printf("%s() ok\n", __FUNCTION__);
+	return 1;
+err:
+	printf("%s test %d failed\n", __FUNCTION__, j);
+	error_print();
+	return -1;
+}
+
+int test_sm9_z256_cosign()
+{
+	SM9_SIGN_CTX ctx;
+	SM9_COSIGN_KEYA keyA;
+	SM9_COSIGN_KEYB keyB;
+	SM9_SIGN_KEY key;
+	SM9_SIGN_MASTER_KEY mpk;
+	SM9_Z256_POINT ds;
+	uint8_t sig[1000] = {0};
+	size_t siglen = 0;
+	int j = 1;
+
+	uint8_t data[20] = {0x43, 0x68, 0x69, 0x6E, 0x65, 0x73, 0x65, 0x20, 0x49, 0x42, 0x53, 0x20, 0x73, 0x74, 0x61, 0x6E, 0x64, 0x61, 0x72, 0x64};
+	uint8_t IDA[5] = {0x41, 0x6C, 0x69, 0x63, 0x65};
+
+	sm9_z256_from_hex(mpk.ks, hex_ks); sm9_z256_twist_point_mul_generator(&(mpk.Ppubs), mpk.ks);
+	sm9_cosign_master_key_extract_key(&mpk, (char *)IDA, sizeof(IDA), &keyA, &keyB);
+	if (sm9_sign_master_key_extract_key(&mpk, (char *)IDA, sizeof(IDA), &key) < 0) goto err; ++j;
+	sm9_z256_point_from_hex(&ds, hex_ds); if (!sm9_z256_point_equ(&(key.ds), &ds)) goto err; ++j;
+	
+	sm9_z256_t r1, s_t, h;
+	sm9_z256_fp12_t g, w1;
+	SM9_Z256_POINT S;
+	SM9_SIGNATURE signature;
+	uint8_t *sig_p = sig;
+	// 预计算
+	sm9_z256_pairing(g, &(key.Ppubs), sm9_z256_generator());
+
+	// 协同签名
+	
+	sm9_cosign_A1(&keyA, g, r1, w1);
+	sm9_cosign_B1(&keyB, g, data,  sizeof(data), w1, s_t, signature.h);
+	sm9_cosign_A2(&keyA, r1, s_t, signature.h, &(signature.S));
+	// sm9_z256_copy(signature.h, h);
+	// sm9_z256_copy(signature.S.X, S.X);
+	// sm9_z256_copy(signature.S.Y, S.Y);
+	// sm9_z256_copy(signature.S.Z, S.Z);
+	// sm9_signature_to_der(&signature, &sig, &siglen);
+	if (sm9_signature_to_der(&signature, &sig_p, &siglen) != 1) {
+		error_print();
+		return -1;
+	}
+    format_bytes(stdout, 0, 0, "signature", sig, siglen);
+
+	// sm9_sign_init(&ctx);
+	// sm9_sign_update(&ctx, data, sizeof(data));
+	// if (sm9_sign_finish(&ctx, &key, sig, &siglen) < 0) goto err; ++j;
 
 	sm9_verify_init(&ctx);
 	sm9_verify_update(&ctx, data, sizeof(data));
@@ -778,6 +838,64 @@ err:
 	return -1;
 }
 
+int test_sm9_z256_codecrypt()
+{
+	SM9_ENC_MASTER_KEY msk;
+	SM9_ENC_KEY key;
+	SM9_Z256_TWIST_POINT de;
+	uint8_t out[1000] = {0};
+	size_t outlen = 0;
+	int j = 1;
+
+	uint8_t data[20] = {0x43, 0x68, 0x69, 0x6E, 0x65, 0x73, 0x65, 0x20, 0x49, 0x42, 0x53, 0x20, 0x73, 0x74, 0x61, 0x6E, 0x64, 0x61, 0x72, 0x64};
+	uint8_t dec[20] = {0};
+	size_t declen = 20;
+	uint8_t IDB[3] = {0x42, 0x6F, 0x62};
+	SM9_Z256_POINT C1;
+	uint8_t c2[20];
+	uint8_t c3[SM3_HMAC_SIZE];
+    SM9_CODEC_KEYA keya;
+    SM9_CODEC_KEYB keyb;
+	sm9_z256_fp12_t w1;
+
+	sm9_z256_from_hex(msk.ke, hex_ke);
+	sm9_z256_point_mul_generator(&(msk.Ppube), msk.ke);
+
+	if (sm9_enc_master_key_extract_key(&msk, (char *)IDB, sizeof(IDB), &key) < 0) goto err; ++j;
+	if (sm9_codec_master_key_extract_key(&msk, (char *)IDB, sizeof(IDB), &keya, &keyb) < 0) goto err; ++j;
+
+	sm9_z256_twist_point_from_hex(&de, hex_de); if (!sm9_z256_twist_point_equ(&(key.de), &de)) goto err; ++j;
+	
+	format_bytes(stdout, 0, 0, "plaintext", data, 20);
+
+	if (sm9_do_encrypt(&msk, (char *)IDB, sizeof(IDB), data, sizeof(data), &C1, c2, c3) < 0) goto err; ++j;
+	
+#if 0
+	// 普通解密
+	if (sm9_do_decrypt(&key, (char *)IDB, sizeof(IDB), &C1, c2, sizeof(data), c3,  dec) < 0) goto err; ++j;
+	if (memcmp(data, dec, sizeof(data)) != 0) goto err; ++j;
+	format_bytes(stdout, 0, 0, "dec", dec, declen);
+#endif
+
+	// 协同解密
+    if (sm9_do_codec_A1(&keya, &C1, w1) != 1) {
+		error_print();
+		return -1;
+	}
+    if (sm9_do_codec_B1(&keyb, (char *)IDB, sizeof(IDB), &C1, c2, sizeof(data), c3, w1, dec) != 1) {
+		error_print();
+		return -1;
+	}
+	format_bytes(stdout, 0, 0, "codec", dec, declen);
+    if (memcmp(data, dec, sizeof(data)) != 0) goto err; ++j;
+	printf("%s() ok\n", __FUNCTION__);
+	return 1;
+err:
+	printf("%s test %d failed\n", __FUNCTION__, j);
+	error_print();
+	return -1;
+}
+
 #define hex_kex		"0002E65B0762D042F51F0D23542B13ED8CFA2E9A0E7206361E013A283905E31F"
 
 #define hex_deA \
@@ -842,8 +960,10 @@ int main(void) {
 	if (test_sm9_z256_twist_point() != 1) goto err;
 	if (test_sm9_z256_pairing() != 1) goto err;
 	if (test_sm9_z256_sign() != 1) goto err;
+	if (test_sm9_z256_cosign() != 1) goto err;
 	if (test_sm9_z256_ciphertext() != 1) goto err;
 	if (test_sm9_z256_encrypt() != 1) goto err;
+	if (test_sm9_z256_codecrypt() != 1) goto err;
 	if (test_sm9_z256_exchange() != 1) goto err;
 	if (test_sm9_z256_pairing_speed() != 1) goto err;
 

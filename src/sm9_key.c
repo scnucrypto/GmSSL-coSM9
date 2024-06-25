@@ -405,6 +405,42 @@ int sm9_sign_master_key_extract_key(SM9_SIGN_MASTER_KEY *msk, const char *id, si
 	return 1;
 }
 
+int sm9_cosign_master_key_extract_key(SM9_SIGN_MASTER_KEY *msk, const char *id, size_t idlen, SM9_COSIGN_KEYA *keyA, SM9_COSIGN_KEYB *keyB)
+{
+	sm9_z256_t t, d1, d2;
+
+	// t1 = H1(ID || hid, N) + ks
+	sm9_z256_hash1(t, id, idlen, SM9_HID_SIGN);
+	sm9_z256_modn_add(t, t, msk->ks);
+	if (sm9_z256_is_zero(t)) {
+		// TODO: when this happen, the admin should re-generate the MSK. Some speciall error/warning should return on this!			
+		error_print();
+		return -1;
+	}
+
+	// t2 = ks * t1^-1
+	sm9_z256_modn_inv(t, t);
+	sm9_z256_modn_mul(t, t, msk->ks);
+
+	// d1
+	sm9_z256_rand_range(d1, sm9_z256_order());
+	// sm9_z256_from_hex(d1, "000aaC8616B06704813203DFD00965022ED15975C662337AED648835DC4B1CBE");
+	
+	// sm9_z256_from_hex(d1, "DFD00965022ED15975C662337AED648835DC4B1CBE");
+	
+	// d2 = d1^-1 * t2, dIDB = d2
+	sm9_z256_modn_inv(keyB->dIDB, d1);
+	sm9_z256_modn_mul(keyB->dIDB, keyB->dIDB, t);
+	sm9_z256_modn_inv(keyB->dIDB_inv, keyB->dIDB);
+
+
+	// DIDA = [d1]P1, Ppubs = Ppubs
+	sm9_z256_point_mul_generator(&keyA->DIDA, d1);
+	keyA->Ppubs = msk->Ppubs;
+	// key->Ppubs = msk->Ppubs;
+	return 1;
+}
+
 int sm9_enc_master_key_extract_key(SM9_ENC_MASTER_KEY *msk, const char *id, size_t idlen,
 	SM9_ENC_KEY *key)
 {
@@ -425,6 +461,43 @@ int sm9_enc_master_key_extract_key(SM9_ENC_MASTER_KEY *msk, const char *id, size
 	// de = t2 * P2
 	sm9_z256_twist_point_mul_generator(&key->de, t);
 	key->Ppube = msk->Ppube;
+
+	return 1;
+}
+
+int sm9_codec_master_key_extract_key(SM9_ENC_MASTER_KEY *msk, const char *id, size_t idlen,
+	SM9_CODEC_KEYA *keyA, SM9_CODEC_KEYB *keyB)
+{
+	sm9_z256_t t, d_inv;
+
+	if (sm9_z256_rand_range(keyB->DIDB, sm9_z256_order()) != 1)
+	{
+		error_print();
+		return -1;
+	}
+	
+	// t1 = H1(ID || hid, N) + ke
+	sm9_z256_hash1(t, id, idlen, SM9_HID_ENC);
+	sm9_z256_modn_add(t, t, msk->ke);
+	if (sm9_z256_is_zero(t)) {
+		error_print();
+		return -1;
+	}
+
+	// t2 = ke * t1^-1
+	sm9_z256_modn_inv(t, t);
+	sm9_z256_modn_mul(t, t, msk->ke);
+
+	// de = t2 * P2
+	// sm9_z256_twist_point_mul_generator(&key->de, t);
+	// key->Ppube = msk->Ppube;
+
+	// de = DIDB^-1 * t2 * P2
+	sm9_z256_modn_inv(d_inv, keyB->DIDB);
+	sm9_z256_modn_mul(t, t, d_inv);
+	sm9_z256_twist_point_mul_generator(&(keyA->DIDA), t);
+	keyA->Ppube = msk->Ppube;
+	keyB->Ppube = msk->Ppube;
 
 	return 1;
 }
