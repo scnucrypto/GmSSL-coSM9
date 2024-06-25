@@ -194,6 +194,7 @@ set(tests
 	sm2_sign
 	sm2_enc
 	sm9
+	sm9_bench
 	zuc
 	block_cipher
 	digest
