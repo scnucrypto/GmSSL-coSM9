@@ -86,6 +86,13 @@ err:
 	return -1;
 }
 
+void run_genkey(int pid, size_t start, size_t end){
+     for(size_t i=start;i<end;i++){
+		sm9_cosign_master_key_extract_key(&mpk, (char *)IDA, sizeof(IDA), &keyA, &keyB);
+     }
+     exit(100+pid);
+}
+
 void run(int pid, size_t start, size_t end){
      for(size_t i=start;i<end;i++){
         sm9_cosign_A1(&keyA, g, r1, w1);
@@ -162,6 +169,13 @@ err:
 	return -1;
 }
 
+void run_genkey(int pid, size_t start, size_t end){
+     for(size_t i=start;i<end;i++){
+		if (sm9_codec_master_key_extract_key(&msk, (char *)IDB, sizeof(IDB), &keya, &keyb) < 0) printf("sm9_codec_master_key_extract_key error!\n");
+     }
+     exit(100+pid);
+}
+
 void run(int pid, size_t start, size_t end){
      for(size_t i=start;i<end;i++){
         if (sm9_do_codec_A1(&keya, &C1, w1) != 1) {
@@ -182,19 +196,31 @@ void run(int pid, size_t start, size_t end){
 int main(void) {
 #if COSIGN
     init();
-    bench_multiprocesses("SM9_co_sign", 1000, 1, run);
+    bench_multiprocesses("SM9_cosign_genkey", 1000, 1, run_genkey);
     // bench_multiprocesses("SM9_co_sign", MAX_SIZE, 2, run_test);
-    bench_multiprocesses("SM9_co_sign", MAX_SIZE, 16, run);
-    bench_multiprocesses("SM9_co_sign", MAX_SIZE, 32, run);
-    bench_multiprocesses("SM9_co_sign", MAX_SIZE, 64, run);
+    bench_multiprocesses("SM9_cosign_genkey", MAX_SIZE, 16, run_genkey);
+    bench_multiprocesses("SM9_cosign_genkey", MAX_SIZE, 32, run_genkey);
+    bench_multiprocesses("SM9_cosign_genkey", MAX_SIZE, 64, run_genkey);
+
+    bench_multiprocesses("SM9_cosign", 1000, 1, run);
+    // bench_multiprocesses("SM9_co_sign", MAX_SIZE, 2, run_test);
+    bench_multiprocesses("SM9_cosign", MAX_SIZE, 16, run);
+    bench_multiprocesses("SM9_cosign", MAX_SIZE, 32, run);
+    bench_multiprocesses("SM9_cosign", MAX_SIZE, 64, run);
 #endif
 
 #if CODEC
     init();
-    bench_multiprocesses("SM9_co_dec", 1000, 1, run);
+    bench_multiprocesses("SM9_codec_genkey", 1000, 1, run_genkey);
     // bench_multiprocesses("SM9_co_sign", MAX_SIZE, 2, run_test);
-    bench_multiprocesses("SM9_co_dec", MAX_SIZE, 16, run);
-    bench_multiprocesses("SM9_co_dec", MAX_SIZE, 32, run);
-    bench_multiprocesses("SM9_co_dec", MAX_SIZE, 64, run);
+    bench_multiprocesses("SM9_codec_genkey", MAX_SIZE, 16, run_genkey);
+    bench_multiprocesses("SM9_codec_genkey", MAX_SIZE, 32, run_genkey);
+    bench_multiprocesses("SM9_codec_genkey", MAX_SIZE, 64, run_genkey);
+
+    bench_multiprocesses("SM9_codec", 1000, 1, run);
+    // bench_multiprocesses("SM9_co_sign", MAX_SIZE, 2, run_test);
+    bench_multiprocesses("SM9_codec", MAX_SIZE, 16, run);
+    bench_multiprocesses("SM9_codec", MAX_SIZE, 32, run);
+    bench_multiprocesses("SM9_codec", MAX_SIZE, 64, run);
 #endif
 }
